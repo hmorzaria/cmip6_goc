@@ -1,0 +1,201 @@
+---
+title: "Notebook for retrieval of CMIP6 for the Gulf of California"
+output: html_notebook
+---
+
+Load libraries
+```{r load libraries, include=FALSE}
+source("libraries.R")
+source("get_nc.R")
+source("get_historical_nc.R")
+
+
+```
+
+
+Get table of all available data and simulations
+```{r}
+
+cmip6.table <- esgf_query(
+  activity = "ScenarioMIP",
+  variable = c("tos","arag","calc","chl","intpp","no3","o2","ph","phyc","po4","si","sos","talk"),
+  frequency = "mon",
+  experiment = c("ssp126", "ssp245", "ssp370", "ssp585"),
+  source = c("GFDL-CM4","MPI-ESM1-2-HR") ,
+  variant = NULL,
+  replica = FALSE,
+  latest = TRUE,
+  type = "Dataset",
+  limit = 10000L,
+  data_node = NULL
+)
+
+options(epwshiftr.dir = getwd())
+options(epwshiftr.verbose = TRUE)
+nodes <- get_data_node()
+
+idx <- init_cmip6_index(
+  activity = "ScenarioMIP",
+  variable = c("tos","arag","calc","chl","intpp","no3","o2","ph","phyc","po4","si","sos","talk"),
+  frequency = "mon",
+  experiment = c("ssp126", "ssp245", "ssp370", "ssp585"),
+  source = NULL,
+  latest = TRUE,
+  variant = NULL,
+  years = NULL,
+  save = TRUE
+)
+
+idx <- init_cmip6_index(
+  activity = "ScenarioMIP",
+  variable = c("chl"),
+  frequency = "mon",
+  experiment = c("ssp126", "ssp245", "ssp370", "ssp585"),
+  source = NULL,
+  latest = TRUE,
+  variant = NULL,
+  years = c(2050),
+  save = TRUE
+)
+
+
+```
+
+
+Download CMIP6 data for all scenarios
+```{r download cmip6}
+
+variables <- c("tos","arag","calc","chl","intpp","no3","o2","ph","phyc","po4","si","sos","talk")
+
+#variables <- "po4"
+model.list.download  <- c("GFDL-CM4", "CNRM-CM6-1-HR","MPI-ESM1-2-HR","CMCC-CM2-SR5")
+
+#ScenarioMIP
+
+nc.dir <- "~/cmip6_goc/cmip6_data"
+                       
+dir.create(nc.dir)
+
+
+for(eachvariable in 1:length(variables)) {
+  
+  this.variable <- variables[eachvariable]
+  
+  nc.var.dir <- paste0(nc.dir,"/",this.variable,"/")
+  
+  if(dir.exists(nc.var.dir)==FALSE) dir.create(nc.var.dir)
+  
+  nc.test <- list.files(nc.var.dir, pattern="*.nc") %>% 
+    is_empty()
+  
+  if(nc.test==TRUE){
+    
+    data.cimp6.sc <- lapply(model.list.download, get_nc, model.var = this.variable) %>% 
+      bind_rows
+    
+    nc.files <- list.files(pattern=paste0(this.variable,"_*.*nc$"), full.names = FALSE)
+    
+    
+    file.rename(from= paste0("~/cmip6_goc/",nc.files), to = paste0(nc.var.dir,nc.files))                     
+  }
+    
+     nc.test <- list.files(nc.var.dir, pattern="*.nc") %>% 
+    is_empty()
+  
+  if(nc.test == FALSE){
+    
+      system(paste("azcopy", paste("--source ", nc.dir,"/",this.variable,sep=""), paste("--destination https://morzariacedostorage.blob.core.windows.net/cmipdata/",this.variable," ",sep=""),"--dest-key /3zI0x7ZAKvovl5kmIQ9FwJ9lqtPn3PAn5H0dJ9Iwt5b47lOPuVkZZK/0p2dOrq81xZ9eQmb8Mugjf+BqWi1ng== ", "--recursive", "--quiet", "--exclude-older",sep=" \\"), wait=TRUE)
+    
+    ready.files <- list.files(nc.var.dir, pattern = "*.nc", full.names = TRUE)
+    file.remove(ready.files)
+
+  }
+   
+}  
+
+
+for(eachvariable in 1:length(variables)) {
+  
+  this.variable <- variables[eachvariable]
+  
+  nc.var.dir <- paste0(nc.dir,"/",this.variable,"/")
+  
+  if(dir.exists(nc.var.dir)==FALSE) dir.create(nc.var.dir)
+  
+  nc.test <- list.files(nc.var.dir, pattern="*.nc") %>% 
+    is_empty()
+  
+  if(nc.test==TRUE){
+    
+    #Historical data
+    #salinity is "sos"
+
+    data.cimp6.hist <- lapply(model.list.download, get_historical_nc, model.var = this.variable) %>% 
+      bind_rows
+    
+    nc.files <- list.files(pattern=paste0(this.variable,"_*.*nc$"), full.names = FALSE)
+    
+    
+    file.rename(from= paste0("~/cmip6_goc/",nc.files), to = paste0(nc.var.dir,nc.files))                     
+  }
+    
+     nc.test <- list.files(nc.var.dir, pattern="*.nc") %>% 
+    is_empty()
+  
+  if(nc.test == FALSE){
+    
+      system(paste("azcopy", paste("--source ", nc.dir,"/",this.variable,sep=""), paste("--destination https://morzariacedostorage.blob.core.windows.net/cmipdata/",this.variable," ",sep=""),"--dest-key /3zI0x7ZAKvovl5kmIQ9FwJ9lqtPn3PAn5H0dJ9Iwt5b47lOPuVkZZK/0p2dOrq81xZ9eQmb8Mugjf+BqWi1ng== ", "--recursive", "--quiet", "--exclude-older",sep=" \\"), wait=TRUE)
+    
+    ready.files <- list.files(nc.var.dir, pattern = "*.nc", full.names = TRUE)
+    file.remove(ready.files)
+
+  }
+   
+}  
+
+    
+# after done shutdown machine  
+ 
+system("az vm deallocate --name atlantisserver08 --no-wait --resource-group morzariacedogroup")
+
+```
+
+
+Combine multipart files into a single nc file
+```{r}
+
+cmip6.table <- read_csv("cmip6_index.csv")
+
+variables <- c("tos","arag","calc","chl","intpp","no3","o2","ph","phyc","po4","si","sos","talk")
+
+model.names  <- c("GFDL-CM4","MPI-ESM1-2-HR")
+
+
+thismodel = "MPI-ESM1-2-HR"
+thisvariable = "chl"
+
+cmip6.table %>% 
+  filter(source_id==thismodel & variable_id==thisvariable)
+
+# list of all files with gr: "data reported on a model's regular grid"
+#gn is a revised grill
+
+model.files <- list.files("~/Puget_Sound_Downscaling/data_files", pattern = "*_gr_*.*nc$") 
+
+# list of unique models and scenarios
+model.scenarios <- list.files("~/Puget_Sound_Downscaling/data_files", pattern = "*_gr_*.*nc$") %>% 
+  str_split(.,"_gr") %>% 
+  unlist %>% 
+  #switch between sos and tos. You can do this manually here, then rerun. ( Note on 7/20/20)
+  grep("sos_Omon",., value = TRUE) %>% 
+  unique()
+
+data.path <- "~/Puget_Sound_Downscaling/data_files"
+save.path <- "~/Puget_Sound_Downscaling/combined_data_files"
+dir.create(save.path)
+
+lapply(model.scenarios,combine_files, model.files, save.path, data.path)
+
+
+```
+
